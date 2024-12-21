@@ -152,7 +152,7 @@ pub(crate) fn pick_circle(
     let origin = config.translation;
     let normal = -config.view_forward();
 
-    let (t, dist_from_gizmo_origin) =
+    let (mut t, dist_from_gizmo_origin) =
         ray_to_plane_origin(normal, origin, ray.origin, ray.direction);
 
     let hit_pos = ray.origin + ray.direction * t;
@@ -162,6 +162,11 @@ pub(crate) fn pick_circle(
     } else {
         (dist_from_gizmo_origin - radius).abs() <= config.focus_distance as f64
     };
+
+    // $AGP: hack to ensure that a picked filled circle takes priority
+    if filled && picked {
+        t = 0.0;
+    }
 
     PickResult {
         subgizmo_point: hit_pos,
@@ -367,7 +372,7 @@ pub(crate) fn plane_global_origin(
 
 /// Radius to use for inner circle subgizmos
 pub(crate) fn inner_circle_radius(config: &PreparedGizmoConfig) -> f64 {
-    (config.scale_factor * config.visuals.gizmo_size) as f64 * 0.2
+    (config.scale_factor * config.visuals.gizmo_size) as f64 * 0.12 // $AGP: reduce size of inner circle
 }
 
 /// Radius to use for outer circle subgizmos

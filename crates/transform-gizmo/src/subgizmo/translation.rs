@@ -120,7 +120,7 @@ impl SubGizmoKind for Translation {
                 &subgizmo.config,
                 gizmo_color(&subgizmo.config, subgizmo.focused, subgizmo.direction),
                 inner_circle_radius(&subgizmo.config),
-                false,
+                true, // $AGP: make the view translation circle filled
             ),
             (TransformKind::Plane, _) => draw_plane(
                 &subgizmo.config,
