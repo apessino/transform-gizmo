@@ -3,8 +3,8 @@ use glam::DVec3;
 use crate::math::{round_to_interval, world_to_screen, Pos2};
 
 use crate::subgizmo::common::{
-    draw_arrow, draw_circle, draw_plane, gizmo_color, gizmo_local_normal, outer_circle_radius,
-    pick_arrow, pick_circle, pick_plane, plane_bitangent, plane_tangent,
+    draw_arrow, draw_circle, draw_plane, gizmo_color, outer_circle_radius, pick_arrow, pick_circle,
+    pick_plane,
 };
 use crate::subgizmo::{common::TransformKind, SubGizmoConfig, SubGizmoKind};
 use crate::{gizmo::Ray, GizmoDirection, GizmoDrawData, GizmoMode, GizmoResult};
@@ -20,6 +20,7 @@ pub(crate) struct ScaleParams {
 
 #[derive(Default, Debug, Copy, Clone)]
 pub(crate) struct ScaleState {
+    start_pos: emath::Pos2,
     start_delta: f64,
 }
 
@@ -44,10 +45,12 @@ impl SubGizmoKind for Scale {
             }
         };
 
-        let start_delta = distance_from_origin_2d(subgizmo, ray.screen_pos)?;
+        let start_pos = ray.screen_pos;
+        let start_delta = distance_from_origin_2d(subgizmo, start_pos)?;
 
         subgizmo.opacity = pick_result.visibility as _;
 
+        subgizmo.state.start_pos = start_pos;
         subgizmo.state.start_delta = start_delta;
 
         if pick_result.picked {
@@ -57,24 +60,21 @@ impl SubGizmoKind for Scale {
         }
     }
 
+    /// $AGP: modified with our own scaling that *ONLY SUPPORTS UNIFORM SCALING* but that
+    /// feels much better in use
     fn update(subgizmo: &mut ScaleSubGizmo, ray: Ray) -> Option<GizmoResult> {
-        let mut delta = distance_from_origin_2d(subgizmo, ray.screen_pos)?;
-        delta /= subgizmo.state.start_delta;
+        let origin = origin_2d(subgizmo)?;
+
+        let dir = (subgizmo.state.start_pos - origin).normalized(); // direction from gizmo center to drag origin
+        let change = ray.screen_pos - subgizmo.state.start_pos; // change in position from start point
+        let dot = dir.x * change.x + dir.y * change.y;
+        let mut delta = scale_map(dot / (subgizmo.state.start_pos - origin).length());
 
         if subgizmo.config.snapping {
-            delta = round_to_interval(delta, subgizmo.config.snap_scale as f64);
+            delta = round_to_interval(delta as f64, subgizmo.config.snap_scale as f64) as f32;
         }
-        delta = delta.max(1e-4) - 1.0;
 
-        let direction = match (subgizmo.transform_kind, subgizmo.direction) {
-            (TransformKind::Axis, _) => gizmo_local_normal(&subgizmo.config, subgizmo.direction),
-            (TransformKind::Plane, GizmoDirection::View) => DVec3::ONE,
-            (TransformKind::Plane, _) => (plane_bitangent(subgizmo.direction)
-                + plane_tangent(subgizmo.direction))
-            .normalize(),
-        };
-
-        let scale = DVec3::ONE + (direction * delta);
+        let scale = DVec3::ONE * delta as f64;
 
         Some(GizmoResult::Scale {
             total: scale.into(),
@@ -106,12 +106,19 @@ impl SubGizmoKind for Scale {
     }
 }
 
+fn origin_2d<T: SubGizmoKind>(subgizmo: &SubGizmoConfig<T>) -> Option<Pos2> {
+    Some(world_to_screen(
+        subgizmo.config.viewport,
+        subgizmo.config.mvp,
+        DVec3::new(0.0, 0.0, 0.0),
+    )?)
+}
 fn distance_from_origin_2d<T: SubGizmoKind>(
     subgizmo: &SubGizmoConfig<T>,
     cursor_pos: Pos2,
 ) -> Option<f64> {
-    let viewport = subgizmo.config.viewport;
-    let gizmo_pos = world_to_screen(viewport, subgizmo.config.mvp, DVec3::new(0.0, 0.0, 0.0))?;
-
-    Some(cursor_pos.distance(gizmo_pos) as f64)
+    Some(cursor_pos.distance(origin_2d(subgizmo)?) as f64)
+}
+fn scale_map(d: f32) -> f32 {
+    (d + f32::sqrt(d * d + 4.0)) * 0.5
 }
